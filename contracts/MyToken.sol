@@ -13,17 +13,18 @@ contract MyToken {
     uint8 public decimals;
 
         constructor(
+        uint256 _totalSupply,
         string memory _name,
         string memory _symbol,
         uint8 _decimals
     ) {
+        balanceOf[msg.sender] = _totalSupply;
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
     }
 
     // state variables
-    uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 

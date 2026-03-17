@@ -10,7 +10,8 @@ Prompt -
         start time 3-month 
         cliff 12-month 
         linear vesting 
-        beneficiary can claim anytime after some amount has vested owner funds once. 
+        beneficiary can claim anytime after some amount has vested 
+        owner funds once. 
 
      Don't generate code for logic. 
 
