@@ -17,6 +17,7 @@ describe("TokenVesting", function () {
     beforeEach(async function () {
         [owner, beneficiary, other] = await ethers.getSigners();
 
+        // alternative - one line deploy w deployContract() 
         const MyToken = await ethers.getContractFactory("MyToken");
         token = await MyToken.deploy(supply, "MyToken", "MTK", 18);
         await token.waitForDeployment();
@@ -38,6 +39,8 @@ describe("TokenVesting", function () {
         await token.approve(await vesting.getAddress(), allocation);
     });
 
+    // we could also use hardhat network helper to manipulate time. 
+    // ethers.provider.send(method, params) is a low level JSON RPC provoder with multiple applications
     async function increaseTimeTo(timestamp) {
         await ethers.provider.send("evm_setNextBlockTimestamp", [Number(timestamp)]);
         await ethers.provider.send("evm_mine", []);
