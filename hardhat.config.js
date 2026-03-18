@@ -1,4 +1,6 @@
-/** @type import('hardhat/config').HardhatUserConfig */
-module.exports = {
+import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+
+export default {
+  plugins: [hardhatToolboxMochaEthers],
   solidity: "0.8.28",
 };

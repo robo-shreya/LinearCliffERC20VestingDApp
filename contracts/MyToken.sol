@@ -8,6 +8,7 @@ pragma solidity ^0.8.18;
 
 contract MyToken {
     // constructor arguments
+    uint256 public totalSupply;
     string public name;
     string public symbol;
     uint8 public decimals;
@@ -18,6 +19,7 @@ contract MyToken {
         string memory _symbol,
         uint8 _decimals
     ) {
+        totalSupply = _totalSupply;
         balanceOf[msg.sender] = _totalSupply;
         name = _name;
         symbol = _symbol;
