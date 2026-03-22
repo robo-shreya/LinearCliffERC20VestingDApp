@@ -1,17 +1,36 @@
 import { useState } from "react";
 import "./App.css";
-import { getWalletContext, requestAccounts } from "./contractHelper";
+import {
+  getContracts,
+  getWalletContext,
+  requestAccounts,
+} from "./contractHelper";
 
 function App() {
   const [account, setAccount] = useState("");
   const [status, setStatus] = useState("not connected");
+  const [owner, setOwner] = useState("-");
+  const [funded, setFunded] = useState(false);
+
+  async function loadVestingContract() {
+    const { vesting } = await getContracts();
+
+    setOwner(await vesting.owner());
+    setFunded(await vesting.funded());
+  }
 
   async function handleConnectWallet() {
     try {
+      // asks MetaMask for permission
       await requestAccounts();
+
+      // gets the signer
       const { signer } = await getWalletContext();
+
+      // gives the connected wallet address
       const wallet = await signer.getAddress();
       setAccount(wallet);
+      await loadVestingContract();
       setStatus(wallet ? "connected" : "not connected");
     } catch (error) {
       setStatus(error.message || "connection failed");
@@ -34,9 +53,9 @@ function App() {
 
       <section className="panel">
         <h2>state</h2>
-        <p>owner: -</p>
+        <p>owner: {owner}</p>
         <p>beneficiary: -</p>
-        <p>funded: false</p>
+        <p>funded: {String(funded)}</p>
         <p>allocation: 0</p>
         <p>vested: 0</p>
         <p>claimable: 0</p>
