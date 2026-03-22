@@ -10,13 +10,30 @@ function App() {
   const [account, setAccount] = useState("");
   const [status, setStatus] = useState("not connected");
   const [owner, setOwner] = useState("-");
+  const [beneficiary, setBeneficiary] = useState("-");
   const [funded, setFunded] = useState(false);
+  const [totalAllocation, setTotalAllocation] = useState("0");
+  const [released, setReleased] = useState("0");
+  const [vested, setVested] = useState("0");
+  const [claimable, setClaimable] = useState("0");
 
   async function loadVestingContract() {
     const { vesting } = await getContracts();
 
     setOwner(await vesting.owner());
+    setBeneficiary(await vesting.beneficiary());
     setFunded(await vesting.funded());
+    setTotalAllocation((await vesting.totalAllocation()).toString());
+    setReleased((await vesting.released()).toString());
+
+    // to show default 0 value before cliff ends 
+    try {
+      setVested((await vesting.getVestedAmount()).toString());
+      setClaimable((await vesting.getClaimableAmount()).toString());
+    } catch {
+      setVested("cliff didn't end yet");
+      setClaimable("cliff didn't end yet");
+    }
   }
 
   async function handleConnectWallet() {
@@ -54,12 +71,12 @@ function App() {
       <section className="panel">
         <h2>state</h2>
         <p>owner: {owner}</p>
-        <p>beneficiary: -</p>
+        <p>beneficiary: {beneficiary}</p>
         <p>funded: {String(funded)}</p>
-        <p>allocation: 0</p>
-        <p>vested: 0</p>
-        <p>claimable: 0</p>
-        <p>released: 0</p>
+        <p>allocation: {totalAllocation}</p>
+        <p>vested: {vested}</p>
+        <p>claimable: {claimable}</p>
+        <p>released: {released}</p>
         <p>your balance: 0</p>
         <p>beneficiary balance: 0</p>
         <p>vesting balance: 0</p>
