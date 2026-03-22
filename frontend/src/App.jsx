@@ -84,6 +84,22 @@ function App() {
     }
   }
 
+  async function handleFund() {
+    try {
+      setStatus("waiting for fund confirmation");
+      const { vesting } = await getContracts();
+      const tx = await vesting.fund();
+
+      setStatus("fund transaction submitted");
+      await tx.wait();
+
+      await loadVestingContract();
+      setStatus("fund successful");
+    } catch (error) {
+      setStatus(error.message || "fund failed");
+    }
+  }
+
   return (
     <div className="app">
       <h1>vesting skeleton frontend</h1>
@@ -117,7 +133,7 @@ function App() {
         <h2>actions</h2>
         <div className="actions">
           <button onClick={handleApprove}>approve</button>
-          <button>fund</button>
+          <button onClick={handleFund}>fund</button>
           <button>claim all</button>
         </div>
 
