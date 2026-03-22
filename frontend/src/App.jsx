@@ -25,14 +25,7 @@ function App() {
   const [vestingBalance, setVestingBalance] = useState("0");
   const [allowance, setAllowance] = useState("0");
 
-  async function loadVestingContract() {
-    const { token, vesting, signer } = await getContracts();
-    const wallet = await signer.getAddress();
-    const tokenDecimals = Number(await token.decimals());
-    const beneficiaryAddress = await vesting.beneficiary();
-    const vestingAddress = await vesting.getAddress();
-
-    setDecimals(tokenDecimals);
+  async function loadBasicVestingState(vesting, tokenDecimals, beneficiaryAddress) {
     setOwner(await vesting.owner());
     setBeneficiary(beneficiaryAddress);
     setFunded(await vesting.funded());
@@ -40,6 +33,15 @@ function App() {
       formatTokenAmount(await vesting.totalAllocation(), tokenDecimals)
     );
     setReleased(formatTokenAmount(await vesting.released(), tokenDecimals));
+  }
+
+  async function loadTokenState(
+    token,
+    wallet,
+    beneficiaryAddress,
+    vestingAddress,
+    tokenDecimals
+  ) {
     setYourBalance(formatTokenAmount(await token.balanceOf(wallet), tokenDecimals));
     setBeneficiaryBalance(
       formatTokenAmount(await token.balanceOf(beneficiaryAddress), tokenDecimals)
@@ -50,8 +52,9 @@ function App() {
     setAllowance(
       formatTokenAmount(await token.allowance(wallet, vestingAddress), tokenDecimals)
     );
+  }
 
-    // to show default 0 value before cliff ends 
+  async function loadClaimState(vesting, tokenDecimals) {
     try {
       setVested(formatTokenAmount(await vesting.getVestedAmount(), tokenDecimals));
       setClaimable(
@@ -61,6 +64,26 @@ function App() {
       setVested("cliff didn't end yet");
       setClaimable("cliff didn't end yet");
     }
+  }
+
+  async function loadVestingContract() {
+    const { token, vesting, signer } = await getContracts();
+    const wallet = await signer.getAddress();
+    const tokenDecimals = Number(await token.decimals());
+    const beneficiaryAddress = await vesting.beneficiary();
+    const vestingAddress = await vesting.getAddress();
+
+    setDecimals(tokenDecimals);
+
+    await loadBasicVestingState(vesting, tokenDecimals, beneficiaryAddress);
+    await loadTokenState(
+      token,
+      wallet,
+      beneficiaryAddress,
+      vestingAddress,
+      tokenDecimals
+    );
+    await loadClaimState(vesting, tokenDecimals);
   }
 
   async function handleConnectWallet() {
@@ -81,74 +104,80 @@ function App() {
     }
   }
 
-  // TODO accept custom amounts to approve
-  async function handleApprove() {
+  async function runTransaction(
+    action,
+    pendingMessage,
+    submittedMessage,
+    successMessage,
+    failureMessage
+  ) {
     try {
-      setStatus("waiting for approve confirmation");
-      const { token, vesting } = await getContracts();
-      const vestingAddress = await vesting.getAddress();
-      const allocation = await vesting.totalAllocation();
-      const tx = await token.approve(vestingAddress, allocation);
+      setStatus(pendingMessage);
+      const tx = await action();
 
-      setStatus("approve transaction submitted");
+      setStatus(submittedMessage);
       await tx.wait();
 
       await loadVestingContract();
-      setStatus("approve successful");
+      setStatus(successMessage);
     } catch (error) {
-      setStatus(error.message || "approve failed");
+      setStatus(error.message || failureMessage);
     }
   }
 
+  // TODO accept custom amounts to approve
+  async function handleApprove() {
+    const { token, vesting } = await getContracts();
+    const vestingAddress = await vesting.getAddress();
+    const allocation = await vesting.totalAllocation();
+
+    await runTransaction(
+      () => token.approve(vestingAddress, allocation),
+      "waiting for approve confirmation",
+      "approve transaction submitted",
+      "approve successful",
+      "approve failed"
+    );
+  }
+
   async function handleFund() {
-    try {
-      setStatus("waiting for fund confirmation");
-      const { vesting } = await getContracts();
-      const tx = await vesting.fund();
+    const { vesting } = await getContracts();
 
-      setStatus("fund transaction submitted");
-      await tx.wait();
-
-      await loadVestingContract();
-      setStatus("fund successful");
-    } catch (error) {
-      setStatus(error.message || "fund failed");
-    }
+    await runTransaction(
+      () => vesting.fund(),
+      "waiting for fund confirmation",
+      "fund transaction submitted",
+      "fund successful",
+      "fund failed"
+    );
   }
 
   // a lot of redundant setup code can be separated 
   // TODO add possibility to manipulate time from UI to test this
+  // time manipulation requires a non-metamask based provider
   async function handleClaimAll() {
-    try {
-      setStatus("waiting for claim confirmation");
-      const { vesting } = await getContracts();
-      const tx = await vesting.claim();
+    const { vesting } = await getContracts();
 
-      setStatus("claim transaction submitted");
-      await tx.wait();
-
-      await loadVestingContract();
-      setStatus("claim successful");
-    } catch (error) {
-      setStatus(error.message || "claim failed");
-    }
+    await runTransaction(
+      () => vesting.claim(),
+      "waiting for claim confirmation",
+      "claim transaction submitted",
+      "claim successful",
+      "claim failed"
+    );
   }
 
   async function handlePartialClaim() {
-    try {
-      setStatus("waiting for partial claim confirmation");
-      const { vesting } = await getContracts();
-      const amount = parseTokenAmount(partialClaimAmount || "0", decimals);
-      const tx = await vesting.partialClaim(amount);
+    const { vesting } = await getContracts();
+    const amount = parseTokenAmount(partialClaimAmount || "0", decimals);
 
-      setStatus("partial claim transaction submitted");
-      await tx.wait();
-
-      await loadVestingContract();
-      setStatus("partial claim successful");
-    } catch (error) {
-      setStatus(error.message || "partial claim failed");
-    }
+    await runTransaction(
+      () => vesting.partialClaim(amount),
+      "waiting for partial claim confirmation",
+      "partial claim transaction submitted",
+      "partial claim successful",
+      "partial claim failed"
+    );
   }
 
   return (
