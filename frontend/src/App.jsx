@@ -1,14 +1,17 @@
 import { useState } from "react";
 import "./App.css";
 import {
+  formatTokenAmount,
   getContracts,
   getWalletContext,
+  parseTokenAmount,
   requestAccounts,
 } from "./contractHelper";
 
 function App() {
   const [account, setAccount] = useState("");
   const [status, setStatus] = useState("not connected");
+  const [decimals, setDecimals] = useState(18);
   const [partialClaimAmount, setPartialClaimAmount] = useState("");
   const [owner, setOwner] = useState("-");
   const [beneficiary, setBeneficiary] = useState("-");
@@ -25,23 +28,35 @@ function App() {
   async function loadVestingContract() {
     const { token, vesting, signer } = await getContracts();
     const wallet = await signer.getAddress();
+    const tokenDecimals = Number(await token.decimals());
     const beneficiaryAddress = await vesting.beneficiary();
     const vestingAddress = await vesting.getAddress();
 
+    setDecimals(tokenDecimals);
     setOwner(await vesting.owner());
     setBeneficiary(beneficiaryAddress);
     setFunded(await vesting.funded());
-    setTotalAllocation((await vesting.totalAllocation()).toString());
-    setReleased((await vesting.released()).toString());
-    setYourBalance((await token.balanceOf(wallet)).toString());
-    setBeneficiaryBalance((await token.balanceOf(beneficiaryAddress)).toString());
-    setVestingBalance((await token.balanceOf(vestingAddress)).toString());
-    setAllowance((await token.allowance(wallet, vestingAddress)).toString());
+    setTotalAllocation(
+      formatTokenAmount(await vesting.totalAllocation(), tokenDecimals)
+    );
+    setReleased(formatTokenAmount(await vesting.released(), tokenDecimals));
+    setYourBalance(formatTokenAmount(await token.balanceOf(wallet), tokenDecimals));
+    setBeneficiaryBalance(
+      formatTokenAmount(await token.balanceOf(beneficiaryAddress), tokenDecimals)
+    );
+    setVestingBalance(
+      formatTokenAmount(await token.balanceOf(vestingAddress), tokenDecimals)
+    );
+    setAllowance(
+      formatTokenAmount(await token.allowance(wallet, vestingAddress), tokenDecimals)
+    );
 
     // to show default 0 value before cliff ends 
     try {
-      setVested((await vesting.getVestedAmount()).toString());
-      setClaimable((await vesting.getClaimableAmount()).toString());
+      setVested(formatTokenAmount(await vesting.getVestedAmount(), tokenDecimals));
+      setClaimable(
+        formatTokenAmount(await vesting.getClaimableAmount(), tokenDecimals)
+      );
     } catch {
       setVested("cliff didn't end yet");
       setClaimable("cliff didn't end yet");
@@ -123,7 +138,8 @@ function App() {
     try {
       setStatus("waiting for partial claim confirmation");
       const { vesting } = await getContracts();
-      const tx = await vesting.partialClaim(partialClaimAmount);
+      const amount = parseTokenAmount(partialClaimAmount || "0", decimals);
+      const tx = await vesting.partialClaim(amount);
 
       setStatus("partial claim transaction submitted");
       await tx.wait();
