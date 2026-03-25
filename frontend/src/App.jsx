@@ -18,6 +18,14 @@ function formatAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function formatTimestamp(timestamp) {
+  if (!timestamp) {
+    return "-";
+  }
+
+  return new Date(timestamp * 1000).toLocaleString();
+}
+
 function App() {
   const [account, setAccount] = useState("");
   const [status, setStatus] = useState("not connected");
@@ -34,6 +42,10 @@ function App() {
   const [beneficiaryBalance, setBeneficiaryBalance] = useState("0");
   const [vestingBalance, setVestingBalance] = useState("0");
   const [allowance, setAllowance] = useState("0");
+  const [startTimestamp, setStartTimestamp] = useState(0);
+  const [cliffTimestamp, setCliffTimestamp] = useState(0);
+  const [endTimestamp, setEndTimestamp] = useState(0);
+  const [currentTimestamp, setCurrentTimestamp] = useState(0);
 
   async function loadBasicVestingState(
     vesting,
@@ -47,6 +59,14 @@ function App() {
       formatTokenAmount(await vesting.totalAllocation(), tokenDecimals),
     );
     setReleased(formatTokenAmount(await vesting.released(), tokenDecimals));
+
+    const start = Number(await vesting.start());
+    const cliffDuration = Number(await vesting.cliffDuration());
+    const duration = Number(await vesting.duration());
+
+    setStartTimestamp(start);
+    setCliffTimestamp(start + cliffDuration);
+    setEndTimestamp(start + duration);
   }
 
   async function loadTokenState(
@@ -81,13 +101,15 @@ function App() {
   }
 
   async function loadVestingContract() {
-    const { token, vesting, signer } = await getContracts();
+    const { token, vesting, signer, provider } = await getContracts();
     const wallet = await signer.getAddress();
     const tokenDecimals = Number(await token.decimals());
     const beneficiaryAddress = await vesting.beneficiary();
     const vestingAddress = await vesting.getAddress();
+    const latestBlock = await provider.getBlock("latest");
 
     setDecimals(tokenDecimals);
+    setCurrentTimestamp(latestBlock ? Number(latestBlock.timestamp) : 0);
 
     await loadBasicVestingState(vesting, tokenDecimals, beneficiaryAddress);
     await loadTokenState(
@@ -197,6 +219,49 @@ function App() {
 
   const numericAllocation = Number.parseFloat(totalAllocation) || 0;
   const numericReleased = Number.parseFloat(released) || 0;
+  const numericAllowance = Number.parseFloat(allowance) || 0;
+  const numericClaimable = Number.parseFloat(claimable);
+  const hasConnectedWallet = Boolean(account);
+  const accountLower = account.toLowerCase();
+  const ownerLower = owner.toLowerCase();
+  const beneficiaryLower = beneficiary.toLowerCase();
+  const isOwner = hasConnectedWallet && owner !== "-" && accountLower === ownerLower;
+  const isBeneficiary =
+    hasConnectedWallet &&
+    beneficiary !== "-" &&
+    accountLower === beneficiaryLower;
+  const cliffReached = currentTimestamp >= cliffTimestamp && cliffTimestamp > 0;
+  const vestingEnded = currentTimestamp >= endTimestamp && endTimestamp > 0;
+  const canApprove = hasConnectedWallet && isOwner && !funded && numericAllocation > 0;
+  const canFund =
+    hasConnectedWallet &&
+    isOwner &&
+    !funded &&
+    numericAllowance >= numericAllocation &&
+    numericAllocation > 0;
+  const canClaim =
+    hasConnectedWallet &&
+    isBeneficiary &&
+    funded &&
+    cliffReached &&
+    Number.isFinite(numericClaimable) &&
+    numericClaimable > 0;
+  const partialClaimAmountNumber = Number.parseFloat(partialClaimAmount);
+  const canPartialClaim =
+    canClaim &&
+    Number.isFinite(partialClaimAmountNumber) &&
+    partialClaimAmountNumber > 0 &&
+    partialClaimAmountNumber <= numericClaimable;
+  let roleLabel = "Viewer";
+
+  if (isOwner && isBeneficiary) {
+    roleLabel = "Owner + Beneficiary";
+  } else if (isOwner) {
+    roleLabel = "Owner";
+  } else if (isBeneficiary) {
+    roleLabel = "Beneficiary";
+  }
+
   const releaseProgress = numericAllocation
     ? Math.min((numericReleased / numericAllocation) * 100, 100)
     : 0;
@@ -221,16 +286,35 @@ function App() {
     { label: "Allowance", value: allowance },
   ];
 
+  const schedule = [
+    { label: "Start", value: formatTimestamp(startTimestamp) },
+    { label: "Cliff unlock", value: formatTimestamp(cliffTimestamp) },
+    { label: "Vesting end", value: formatTimestamp(endTimestamp) },
+    { label: "Chain time", value: formatTimestamp(currentTimestamp) },
+  ];
+
+  let actionHint = "Connect a wallet to interact with the contracts.";
+
+  if (hasConnectedWallet && !isOwner && !isBeneficiary) {
+    actionHint = "This wallet is read-only here. Funding is owner-only and claims are beneficiary-only.";
+  } else if (isOwner && !funded && numericAllowance < numericAllocation) {
+    actionHint = "Approve the full allocation before funding the vesting contract.";
+  } else if (isOwner && !funded) {
+    actionHint = "The owner can fund the vesting contract now.";
+  } else if (isBeneficiary && funded && !cliffReached) {
+    actionHint = "The beneficiary must wait until the cliff timestamp before claiming.";
+  } else if (isBeneficiary && canClaim) {
+    actionHint = "Tokens are claimable now. The beneficiary can claim all or a custom amount.";
+  } else if (funded && vestingEnded) {
+    actionHint = "Vesting has ended. Any remaining vested tokens can be claimed by the beneficiary.";
+  }
+
   return (
     <div className="app">
       <section className="hero panel">
         <div className="hero-copy">
           <p className="eyebrow">Token Vesting Dashboard</p>
           <h1>Track funding, release progress, and beneficiary claims in one view.</h1>
-          <p className="hero-text">
-            This UI is wired to your local Hardhat deployment and surfaces the key
-            token and vesting states without changing the contract flow.
-          </p>
         </div>
 
         <div className="wallet-card">
@@ -238,6 +322,10 @@ function App() {
             {account ? "Wallet connected" : "Wallet offline"}
           </span>
           <p className="wallet-address">{formatAddress(account || "-")}</p>
+          <div className="role-line">
+            <span className="role-label">Current role</span>
+            <strong>{roleLabel}</strong>
+          </div>
           <p className="wallet-status">{status}</p>
           <div className="wallet-actions">
             <button className="primary-button" onClick={handleConnectWallet}>
@@ -278,11 +366,11 @@ function App() {
               <code>{account || "-"}</code>
             </div>
             <div className="detail-row">
-              <span>Owner</span>
+              <span>Owner wallet</span>
               <code>{owner}</code>
             </div>
             <div className="detail-row">
-              <span>Beneficiary</span>
+              <span>Beneficiary wallet</span>
               <code>{beneficiary}</code>
             </div>
             <div className="detail-row">
@@ -341,6 +429,58 @@ function App() {
         </article>
       </section>
 
+      <section className="content-grid">
+        <article className="panel detail-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Schedule</p>
+              <h2>Vesting timeline</h2>
+            </div>
+            <span className={`pill ${cliffReached ? "pill-live" : "pill-idle"}`}>
+              {cliffReached ? "Cliff reached" : "Cliff locked"}
+            </span>
+          </div>
+
+          <div className="detail-list">
+            {schedule.map((item) => (
+              <div className="detail-row" key={item.label}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel detail-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Interaction rules</p>
+              <h2>What this wallet can do</h2>
+            </div>
+          </div>
+
+          <p className="action-hint">{actionHint}</p>
+          <div className="permission-list">
+            <div className="balance-row">
+              <span>Approve allocation</span>
+              <strong>{canApprove ? "Available" : "Unavailable"}</strong>
+            </div>
+            <div className="balance-row">
+              <span>Fund vesting</span>
+              <strong>{canFund ? "Available" : "Unavailable"}</strong>
+            </div>
+            <div className="balance-row">
+              <span>Claim all</span>
+              <strong>{canClaim ? "Available" : "Unavailable"}</strong>
+            </div>
+            <div className="balance-row">
+              <span>Partial claim</span>
+              <strong>{canPartialClaim ? "Available" : "Unavailable"}</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <section className="panel action-panel">
         <div className="section-heading">
           <div>
@@ -350,13 +490,25 @@ function App() {
         </div>
 
         <div className="actions">
-          <button className="primary-button" onClick={handleApprove}>
+          <button
+            className="primary-button"
+            onClick={handleApprove}
+            disabled={!canApprove}
+          >
             Approve allocation
           </button>
-          <button className="secondary-button" onClick={handleFund}>
+          <button
+            className="secondary-button"
+            onClick={handleFund}
+            disabled={!canFund}
+          >
             Fund vesting
           </button>
-          <button className="secondary-button" onClick={handleClaimAll}>
+          <button
+            className="secondary-button"
+            onClick={handleClaimAll}
+            disabled={!canClaim}
+          >
             Claim all
           </button>
         </div>
@@ -371,7 +523,11 @@ function App() {
               value={partialClaimAmount}
               onChange={(event) => setPartialClaimAmount(event.target.value)}
             />
-            <button className="secondary-button" onClick={handlePartialClaim}>
+            <button
+              className="secondary-button"
+              onClick={handlePartialClaim}
+              disabled={!canPartialClaim}
+            >
               Claim custom amount
             </button>
           </div>
